@@ -18,19 +18,34 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 -- =======================================================
--- HỆ THỐNG FOLDER "Beta" & LOGGING FILE
+-- HỆ THỐNG FOLDER "Beta", LOGGING & ERROR LOG
 -- =======================================================
 local folderName = "Beta"
 local logFileName = folderName .. "/AutoFruit_Log_" .. os.date("%Y-%m-%d_%H-%M-%S") .. ".txt"
+local errorFileName = folderName .. "/error.txt"
 
 if makefolder and not isfolder(folderName) then
     pcall(function() makefolder(folderName) end)
 end
 
-local function writeLog(message)
+local function writeLog(message, isError)
     local timestamp = os.date("[%X]")
     local formattedMsg = timestamp .. " " .. tostring(message)
-    print(formattedMsg) -- In ra console của executor
+    
+    if isError then
+        print("❌ " .. formattedMsg)
+        if writefile and appendfile then
+            pcall(function()
+                if not isfile(errorFileName) then
+                    writefile(errorFileName, formattedMsg .. "\n")
+                else
+                    appendfile(errorFileName, formattedMsg .. "\n")
+                end
+            end)
+        end
+    else
+        print(formattedMsg)
+    end
     
     if writefile and appendfile then
         pcall(function()
@@ -44,6 +59,12 @@ local function writeLog(message)
 end
 
 writeLog("=== KHỞI ĐỘNG SCRIPT AUTO FARM FRUIT ===")
+
+-- =======================================================
+-- ⏳ ĐỢI 5 GIÂY SAU KHI VÀO GAME MỚI CHẠY SCRIPT
+-- =======================================================
+writeLog("Đang chờ 5 giây để game load hoàn tất ổn định...")
+task.wait(5)
 
 -- =======================================================
 -- AUTO CHỌN TEAM THEO CONFIG
@@ -81,7 +102,7 @@ espFolder.Name = "FruitESPFolder"
 espFolder.Parent = Workspace
 
 -- =======================================================
--- 0. QUEUE TELEPORT KHI HOP SERVER
+-- 0. QUEUE TELEPORT KHI HOP SERVER & XỬ LÝ SERVER ĐẦY
 -- =======================================================
 local queueTeleport = (syn and syn.queue_on_teleport)
     or (fluxus and fluxus.queue_on_teleport)
@@ -121,16 +142,15 @@ local function ultraFastHop()
 
     local serverBrowser = ReplicatedStorage:WaitForChild("__ServerBrowser", 5)
     if not serverBrowser then
-        writeLog("[LỖI] Không tìm thấy __ServerBrowser để Hop!")
+        writeLog("[LỖI] Không tìm thấy __ServerBrowser để Hop!", true)
         getgenv()._BF_IS_HOPPING = false
         return
     end
 
     local hopped = false
 
-    local function tryTeleport(targetJob, pageNum)
+    local function tryTeleport(targetJob)
         if hopped then return end
-        hopped = true
 
         local list = getgenv()._BF_RECENT_JOBIDS
         table.insert(list, 1, targetJob)
@@ -153,15 +173,26 @@ local function ultraFastHop()
             pcall(function() queueTeleport(autoScript) end)
         end
 
-        task.spawn(function()
-            for _ = 1, 10 do
-                pcall(function()
-                    serverBrowser:InvokeServer("teleport", targetJob)
-                end)
+        local success, err = pcall(function()
+            for _ = 1, 5 do
+                local res = serverBrowser:InvokeServer("teleport", targetJob)
+                if res and type(res) == "string" and res:lower():find("full") then
+                    error("GameFull")
+                end
                 task.wait(0.2)
             end
-            getgenv()._BF_IS_HOPPING = false
         end)
+
+        if success then
+            hopped = true
+        else
+            writeLog("[CẢNH BÁO] Server " .. tostring(targetJob) .. " đã đầy (GameFull) hoặc lỗi. Đang đổi sang server khác...", true)
+            getgenv()._BF_IS_HOPPING = false
+            task.spawn(function()
+                task.wait(1)
+                ultraFastHop()
+            end)
+        end
     end
 
     local startOffset = math.random(1, 50)
@@ -185,8 +216,8 @@ local function ultraFastHop()
 
                     if #validList > 0 and not hopped then
                         local target = validList[math.random(1, #validList)]
-                        writeLog("Đã tìm thấy Server phù hợp, chuẩn bị Teleport sang JobId: " .. tostring(target))
-                        tryTeleport(target, page)
+                        writeLog("Đã tìm thấy Server, chuẩn bị Teleport sang JobId: " .. tostring(target))
+                        tryTeleport(target)
                         return
                     end
                 end
@@ -194,10 +225,11 @@ local function ultraFastHop()
         end)
     end
 
-    task.delay(5, function()
+    task.delay(6, function()
         if not hopped then
             getgenv()._BF_IS_HOPPING = false
-            writeLog("Hop server thất bại/hết thời gian chờ, thử lại sau.")
+            writeLog("Hop server quá thời gian, thử lại vòng tiếp theo...", true)
+            task.spawn(ultraFastHop)
         end
     end)
 end
