@@ -18,6 +18,34 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 -- =======================================================
+-- HỆ THỐNG FOLDER "Beta" & LOGGING FILE
+-- =======================================================
+local folderName = "Beta"
+local logFileName = folderName .. "/AutoFruit_Log_" .. os.date("%Y-%m-%d_%H-%M-%S") .. ".txt"
+
+if makefolder and not isfolder(folderName) then
+    pcall(function() makefolder(folderName) end)
+end
+
+local function writeLog(message)
+    local timestamp = os.date("[%X]")
+    local formattedMsg = timestamp .. " " .. tostring(message)
+    print(formattedMsg) -- In ra console của executor
+    
+    if writefile and appendfile then
+        pcall(function()
+            if not isfile(logFileName) then
+                writefile(logFileName, formattedMsg .. "\n")
+            else
+                appendfile(logFileName, formattedMsg .. "\n")
+            end
+        end)
+    end
+end
+
+writeLog("=== KHỞI ĐỘNG SCRIPT AUTO FARM FRUIT ===")
+
+-- =======================================================
 -- AUTO CHỌN TEAM THEO CONFIG
 -- =======================================================
 local function autoSelectTeam()
@@ -26,6 +54,7 @@ local function autoSelectTeam()
             local commF = ReplicatedStorage:WaitForChild("Remotes", 5) and ReplicatedStorage.Remotes:WaitForChild("CommF_", 5)
             if commF then
                 commF:InvokeServer("SetTeam", targetTeam)
+                writeLog("Đã chọn Team thành công: " .. targetTeam)
             end
         end
     end)
@@ -36,6 +65,7 @@ autoSelectTeam()
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
+    writeLog("Nhân vật đã respawn/load lại.")
 end)
 
 local autoFarmEnabled = false
@@ -87,9 +117,11 @@ end
 local function ultraFastHop()
     if getgenv()._BF_IS_HOPPING then return end
     getgenv()._BF_IS_HOPPING = true
+    writeLog("Đang tiến hành Ultra Hop tìm server mới...")
 
     local serverBrowser = ReplicatedStorage:WaitForChild("__ServerBrowser", 5)
     if not serverBrowser then
+        writeLog("[LỖI] Không tìm thấy __ServerBrowser để Hop!")
         getgenv()._BF_IS_HOPPING = false
         return
     end
@@ -153,6 +185,7 @@ local function ultraFastHop()
 
                     if #validList > 0 and not hopped then
                         local target = validList[math.random(1, #validList)]
+                        writeLog("Đã tìm thấy Server phù hợp, chuẩn bị Teleport sang JobId: " .. tostring(target))
                         tryTeleport(target, page)
                         return
                     end
@@ -164,12 +197,13 @@ local function ultraFastHop()
     task.delay(5, function()
         if not hopped then
             getgenv()._BF_IS_HOPPING = false
+            writeLog("Hop server thất bại/hết thời gian chờ, thử lại sau.")
         end
     end)
 end
 
 -- =======================================================
--- 1. TWEEN & NOCLIP & BODYCLIP LOGIC MỚI
+-- 1. TWEEN & NOCLIP & BODYCLIP LOGIC
 -- =======================================================
 local function setNoclip(enable)
     if enable then
@@ -222,7 +256,6 @@ local function topos(Tween_Pos, onComplete)
 
     local distance = (hrp.Position - Tween_Pos.Position).Magnitude
 
-    -- Nếu khoảng cách quá ngắn, dịch chuyển ngay lập tức
     if distance <= 300 then
         hrp.CFrame = Tween_Pos
         if onComplete then onComplete() end
@@ -232,14 +265,12 @@ local function topos(Tween_Pos, onComplete)
     setNoclip(true)
     isTweening = true
 
-    -- Tạo lực nâng khóa vị trí chống trôi / rơi xuống biển
     bodyVelocity = Instance.new("BodyVelocity")
     bodyVelocity.Name = "BodyClip"
     bodyVelocity.Parent = hrp
     bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
     bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 
-    -- Mẹo duy trì độ cao Y nằm ngang khi Tween
     local targetY = Tween_Pos.Y
     local targetCFrameHorizontal = CFrame.new(Tween_Pos.X, hrp.Position.Y, Tween_Pos.Z)
     local horizontalDistance = (hrp.Position - targetCFrameHorizontal.Position).Magnitude
@@ -319,6 +350,7 @@ local function autoStoreFruit()
     if fruitTool then
         pcall(function()
             commF:InvokeServer("StoreFruit", fruitTool.Name, fruitTool)
+            writeLog("Đã tự động cất kho trái cây: " .. tostring(fruitTool.Name))
         end)
     end
 end
@@ -327,6 +359,7 @@ local function autoGachaFruit()
     if not autoGachaConfig then return end
 
     task.spawn(function()
+        writeLog("Luồng Auto Gacha đã được kích hoạt (15s/lượt).")
         while autoGachaConfig do
             pcall(function()
                 local commF = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_")
@@ -334,7 +367,7 @@ local function autoGachaFruit()
                     commF:InvokeServer("Cousin", "DLCBoxData")
                     task.wait(0.5)
                     local result = commF:InvokeServer("Cousin", "try purchase DLCBoxData")
-                    print("[" .. os.date("%X") .. "] Kết quả Gacha:", result)
+                    writeLog("Kết quả Gacha: " .. tostring(result))
                     task.wait(0.5)
                     autoStoreFruit()
                 end
@@ -384,6 +417,7 @@ local mainTitle
 
 local function startOneClickLoop()
     task.spawn(function()
+        writeLog("Bắt đầu vòng lặp Auto Farm Fruit...")
         if autoGachaConfig then
             autoGachaFruit()
         end
@@ -393,17 +427,22 @@ local function startOneClickLoop()
 
             if #fruits == 0 then
                 if mainTitle then mainTitle.Text = "❌ Không có trái! Đang Hop..." end
+                writeLog("Không tìm thấy trái nào trong server. Tiến hành Hop...")
                 task.wait(1)
                 ultraFastHop()
                 break
             else
+                writeLog("Phát hiện tổng cộng " .. tostring(#fruits) .." trái trên map.")
                 for i, fruit in ipairs(fruits) do
                     if not autoFarmEnabled then break end
                     if fruit.Handle and fruit.Handle.Parent then
                         if mainTitle then mainTitle.Text = string.format("🚀 (%d/%d): %s", i, #fruits, fruit.Name) end
+                        writeLog(string.format("Đang bay tới nhặt trái: %s (Mục tiêu %d/%d)", fruit.Name, i, #fruits))
+                        
                         local completed = false
                         topos(fruit.Handle.CFrame + Vector3.new(0, 3, 0), function()
                             completed = true
+                            writeLog("Đã đến vị trí trái: " .. fruit.Name)
                             autoStoreFruit()
                         end)
 
@@ -414,6 +453,7 @@ local function startOneClickLoop()
 
                 if autoFarmEnabled then
                     if mainTitle then mainTitle.Text = "✅ Đã nhặt hết! Chờ 5s hop..." end
+                    writeLog("Đã nhặt xong các trái trên map. Chờ 5 giây trước khi Hop...")
                     task.wait(5)
                     if autoFarmEnabled then
                         if mainTitle then mainTitle.Text = "🌀 Đang Hop Server..." end
@@ -477,10 +517,12 @@ toggleBtn.MouseButton1Click:Connect(function()
     if autoFarmEnabled then
         toggleBtn.Text = "🟢 AUTO FARM: BẬT"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 100)
+        writeLog("Người dùng BẬT Auto Farm bằng GUI.")
         startOneClickLoop()
     else
         toggleBtn.Text = "🔴 AUTO FARM: TẮT"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+        writeLog("Người dùng TẮT Auto Farm bằng GUI.")
         stopTween()
         mainTitle.Text = "⚡ ONE-CLICK AUTO FRUIT"
     end
@@ -491,7 +533,7 @@ if getgenv().AUTO_FARM_FRUIT then
     autoFarmEnabled = true
     toggleBtn.Text = "🟢 AUTO FARM: BẬT"
     toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 100)
+    writeLog("Script tự động kích hoạt sau khi Teleport / Hop server.")
     task.wait(1)
     startOneClickLoop()
 end
-
